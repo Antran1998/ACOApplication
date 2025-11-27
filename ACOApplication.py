@@ -59,7 +59,7 @@ def plot_grid_path(m, path, obstacles=None, filename='shortest_path.png', title=
     xs = coords[:, 0]
     ys = coords[:, 1]
 
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(10, 10))
     # draw grid edges lightly
     for i in range(len(coords)):
         r = i // m
@@ -79,7 +79,7 @@ def plot_grid_path(m, path, obstacles=None, filename='shortest_path.png', title=
     plt.scatter(xs, ys, c='white', edgecolors='black', s=50, zorder=3)
     for idx, (x, y) in enumerate(coords):
         if obstacles is None or idx not in obstacles:
-            plt.text(x, y, str(idx), fontsize=7, ha='center', va='center', zorder=4)
+            plt.text(x, y, str(idx), fontsize=6, ha='center', va='center', zorder=4)
 
     # plot path if available
     if path is not None:
@@ -91,7 +91,7 @@ def plot_grid_path(m, path, obstacles=None, filename='shortest_path.png', title=
         plt.legend(loc='upper right')
 
     plt.gca().set_aspect('equal')
-    plt.title(title)
+    plt.title(title, fontsize=10)
     plt.axis('off')
     plt.tight_layout()
     plt.savefig(filename, dpi=150)
@@ -99,44 +99,104 @@ def plot_grid_path(m, path, obstacles=None, filename='shortest_path.png', title=
 
 
 def create_maze_obstacles(m):
-    """Create a maze-like pattern of obstacles."""
+    """Create a dense maze-like pattern of obstacles."""
     obstacles = []
-    # Vertical walls
+    # Create more complex maze with tighter walls
     for r in range(1, m-1):
-        if r % 2 == 0:
-            for c in range(1, m-1, 2):
+        for c in range(1, m-1):
+            # Create a checkerboard-like pattern with gaps
+            if (r % 3 == 0 and c % 2 == 1) or (r % 3 == 2 and c % 2 == 0):
                 obstacles.append((r, c))
-    # Horizontal walls
-    for c in range(1, m-1):
-        if c % 2 == 1:
-            for r in range(2, m-1, 2):
+            # Add extra vertical walls
+            if c % 4 == 0 and r % 2 == 0:
                 obstacles.append((r, c))
     return obstacles
 
 
 def create_corridor_obstacles(m):
-    """Create a narrow corridor forcing a specific path."""
+    """Create multiple narrow corridors forcing complex navigation."""
     obstacles = []
-    mid = m // 2
-    # Block most of the middle section, leaving only a narrow path
-    for r in range(1, m-1):
-        for c in range(mid-1, mid+2):
-            if c == mid and r != m // 2:  # Leave one opening in the middle
+    # Create horizontal barriers with small gaps
+    for r in [m // 4, m // 2, 3 * m // 4]:
+        for c in range(m):
+            # Leave only 2-3 gaps per barrier
+            if c not in [m // 4, m // 2, 3 * m // 4]:
                 obstacles.append((r, c))
+    
+    # Add vertical barriers
+    for c in [m // 3, 2 * m // 3]:
+        for r in range(m):
+            # Leave gaps at different positions
+            if r not in [m // 5, 2 * m // 5, 3 * m // 5, 4 * m // 5]:
+                obstacles.append((r, c))
+    
     return obstacles
 
 
 def create_dense_obstacles(m, density=0.3):
-    """Create randomly distributed dense obstacles."""
+    """Create randomly distributed dense obstacles with clusters."""
     np.random.seed(123)
     obstacles = []
     n = m * m
+    
+    # First pass: random obstacles
     for r in range(m):
         for c in range(m):
             if np.random.random() < density:
                 idx = r * m + c
                 if idx != 0 and idx != n - 1:  # Don't block start/end
                     obstacles.append((r, c))
+    
+    # Second pass: create obstacle clusters for extra difficulty
+    num_clusters = max(3, m // 4)
+    for _ in range(num_clusters):
+        cluster_r = np.random.randint(2, m - 2)
+        cluster_c = np.random.randint(2, m - 2)
+        # Add 3x3 cluster with some gaps
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if np.random.random() < 0.7:  # 70% chance to block
+                    new_r, new_c = cluster_r + dr, cluster_c + dc
+                    if 0 <= new_r < m and 0 <= new_c < m:
+                        idx = new_r * m + new_c
+                        if idx != 0 and idx != n - 1:
+                            obstacles.append((new_r, new_c))
+    
+    return obstacles
+
+
+def create_spiral_obstacles(m):
+    """Create a spiral pattern forcing a long winding path."""
+    obstacles = []
+    # Create walls that force a spiral path
+    for r in range(2, m - 2, 3):
+        for c in range(2, m - 2):
+            obstacles.append((r, c))
+    
+    for c in range(2, m - 2, 3):
+        for r in range(2, m - 2):
+            obstacles.append((r, c))
+    
+    # Add additional blocking to force longer paths
+    for r in range(1, m - 1, 4):
+        for c in range(1, m - 1, 2):
+            obstacles.append((r, c))
+    
+    return obstacles
+
+
+def create_extreme_maze(m):
+    """Create an extremely challenging maze with minimal paths."""
+    obstacles = []
+    # Dense wall pattern
+    for r in range(m):
+        for c in range(m):
+            # Create walls with occasional gaps
+            if (r % 2 == 1 and c % 3 != 1) or (c % 2 == 1 and r % 3 != 1):
+                idx = r * m + c
+                if idx != 0 and idx != m * m - 1:
+                    obstacles.append((r, c))
+    
     return obstacles
 
 
@@ -297,12 +357,12 @@ def run_scenario(scenario_name, m, obstacles, start, end, n_runs=10):
 
     print(f'Grid size: {m}x{m} = {m*m} nodes')
     print(f'Start: {start}, End: {end}')
-    print(f'Obstacles: {len(obs_set)} nodes blocked')
+    print(f'Obstacles: {len(obs_set)} nodes blocked ({len(obs_set)/(m*m)*100:.1f}% of grid)')
     
-    # Common parameters
+    # Common parameters - increased for harder scenarios
     common_params = {
-        'n_ants': 15,
-        'n_iterations': 150,
+        'n_ants': 20,
+        'n_iterations': 200,
         'decay': 0.3,
         'alpha': 1.0,
         'beta': 2.0
@@ -373,7 +433,7 @@ def run_scenario(scenario_name, m, obstacles, start, end, n_runs=10):
     for i, result in enumerate(all_results):
         if result['best_path'] is not None:
             try:
-                filename = f"{scenario_name.lower().replace(' ', '_')}_config_{i+1}.png"
+                filename = f"{scenario_name.lower().replace(' ', '_').replace('(', '').replace(')', '').replace(',', '').replace('%', 'pct')}_config_{i+1}.png"
                 title = f"{scenario_name}\n{result['config_name']} - Cost: {result['min_cost']:.2f}"
                 plot_grid_path(m, result['best_path'], obstacles=obs_set, filename=filename, title=title)
             except Exception as e:
@@ -387,58 +447,68 @@ def main():
     """Run multiple complex scenarios to observe ACO performance."""
     
     print("="*100)
-    print("ACO SHORTEST PATH - COMPREHENSIVE BENCHMARK SUITE")
+    print("ACO SHORTEST PATH - EXTREME DIFFICULTY BENCHMARK SUITE")
     print("="*100)
     
     n_runs = 15  # Number of runs per configuration
     
-    # Scenario 1: Large open grid with sparse obstacles
+    # Scenario 1: Dense maze with many obstacles
     scenario1_results = run_scenario(
-        scenario_name="Large Open Grid (10x10, Sparse Obstacles)",
-        m=10,
-        obstacles=[(2, 3), (3, 3), (4, 3), (5, 5), (6, 5), (7, 5), (3, 7), (4, 7)],
-        start=0,
-        end=99,
-        n_runs=n_runs
-    )
-    
-    # Scenario 2: Medium grid with maze-like obstacles
-    scenario2_results = run_scenario(
-        scenario_name="Maze Pattern (12x12)",
-        m=12,
-        obstacles=create_maze_obstacles(12),
-        start=0,
-        end=143,
-        n_runs=n_runs
-    )
-    
-    # Scenario 3: Corridor scenario - forces long detour
-    scenario3_results = run_scenario(
-        scenario_name="Narrow Corridor (10x10)",
-        m=10,
-        obstacles=create_corridor_obstacles(10),
-        start=0,
-        end=99,
-        n_runs=n_runs
-    )
-    
-    # Scenario 4: Dense obstacles - challenging pathfinding
-    scenario4_results = run_scenario(
-        scenario_name="Dense Obstacles (15x15, 25% blocked)",
+        scenario_name="Dense Maze (15x15, Complex Pattern)",
         m=15,
-        obstacles=create_dense_obstacles(15, density=0.25),
+        obstacles=create_maze_obstacles(15),
         start=0,
         end=224,
         n_runs=n_runs
     )
     
-    # Scenario 5: Very large sparse grid - tests scalability
-    scenario5_results = run_scenario(
-        scenario_name="Large Sparse Grid (20x20)",
+    # Scenario 2: Multiple narrow corridors
+    scenario2_results = run_scenario(
+        scenario_name="Multi-Corridor Maze (15x15)",
+        m=15,
+        obstacles=create_corridor_obstacles(15),
+        start=0,
+        end=224,
+        n_runs=n_runs
+    )
+    
+    # Scenario 3: Very dense random obstacles with clusters
+    scenario3_results = run_scenario(
+        scenario_name="Dense Clustered Obstacles (18x18, 40% blocked)",
+        m=18,
+        obstacles=create_dense_obstacles(18, density=0.40),
+        start=0,
+        end=323,
+        n_runs=n_runs
+    )
+    
+    # Scenario 4: Spiral pattern forcing long paths
+    scenario4_results = run_scenario(
+        scenario_name="Spiral Maze (20x20)",
         m=20,
-        obstacles=[(i, 10) for i in range(5, 15) if i != 10],
+        obstacles=create_spiral_obstacles(20),
         start=0,
         end=399,
+        n_runs=n_runs
+    )
+    
+    # Scenario 5: Extreme maze - minimal viable paths
+    scenario5_results = run_scenario(
+        scenario_name="Extreme Maze (16x16, Minimal Paths)",
+        m=16,
+        obstacles=create_extreme_maze(16),
+        start=0,
+        end=255,
+        n_runs=n_runs
+    )
+    
+    # Scenario 6: Large grid with very dense obstacles
+    scenario6_results = run_scenario(
+        scenario_name="Large Dense Grid (25x25, 35% blocked)",
+        m=25,
+        obstacles=create_dense_obstacles(25, density=0.35),
+        start=0,
+        end=624,
         n_runs=n_runs
     )
     
@@ -448,11 +518,12 @@ def main():
     print(f"{'='*100}")
     
     all_scenarios = [
-        ("Large Open Grid", scenario1_results),
-        ("Maze Pattern", scenario2_results),
-        ("Narrow Corridor", scenario3_results),
-        ("Dense Obstacles", scenario4_results),
-        ("Large Sparse Grid", scenario5_results)
+        ("Dense Maze", scenario1_results),
+        ("Multi-Corridor Maze", scenario2_results),
+        ("Dense Clustered Obstacles", scenario3_results),
+        ("Spiral Maze", scenario4_results),
+        ("Extreme Maze", scenario5_results),
+        ("Large Dense Grid", scenario6_results)
     ]
     
     for scenario_name, results in all_scenarios:
@@ -467,6 +538,12 @@ def main():
             fastest = min(valid_results, key=lambda x: x['mean_time'])
             print(f"   Best Solution: {best['config_name']} (cost: {best['min_cost']:.4f})")
             print(f"   Fastest: {fastest['config_name']} (time: {fastest['mean_time']:.6f}s)")
+            
+            # Calculate improvement percentage
+            baseline = [r for r in results if r['config_name'] == 'No Boosting'][0]
+            if baseline['min_cost'] != float('inf') and best['min_cost'] < baseline['min_cost']:
+                improvement = ((baseline['min_cost'] - best['min_cost']) / baseline['min_cost']) * 100
+                print(f"   Improvement over baseline: {improvement:.2f}%")
         else:
             print(f"    No successful paths found")
     
