@@ -50,7 +50,7 @@ def grid_coords(m, spacing=1.0):
     return np.array(coords)
 
 
-def plot_grid_path(m, path, filename='shortest_path.png'):
+def plot_grid_path(m, path, obstacles=None, filename='shortest_path.png', title='Shortest path found by ACO'):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -59,7 +59,7 @@ def plot_grid_path(m, path, filename='shortest_path.png'):
     xs = coords[:, 0]
     ys = coords[:, 1]
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(8, 8))
     # draw grid edges lightly
     for i in range(len(coords)):
         r = i // m
@@ -70,36 +70,75 @@ def plot_grid_path(m, path, filename='shortest_path.png'):
                 j = rr * m + cc
                 plt.plot([coords[i, 0], coords[j, 0]], [coords[i, 1], coords[j, 1]], color='lightgray', linewidth=0.8)
 
+    # plot obstacles first
+    if obstacles:
+        obs_coords = coords[list(obstacles)]
+        plt.scatter(obs_coords[:, 0], obs_coords[:, 1], c='0.3', marker='s', s=200, label='obstacle', zorder=2)
+
     # plot nodes
-    plt.scatter(xs, ys, c='black')
+    plt.scatter(xs, ys, c='white', edgecolors='black', s=50, zorder=3)
     for idx, (x, y) in enumerate(coords):
-        plt.text(x + 0.05, y + 0.05, str(idx), fontsize=8)
+        if obstacles is None or idx not in obstacles:
+            plt.text(x, y, str(idx), fontsize=7, ha='center', va='center', zorder=4)
 
     # plot path if available
     if path is not None:
         path_coords = coords[path]
-        plt.plot(path_coords[:, 0], path_coords[:, 1], '-o', color='tab:blue', linewidth=2, markersize=6)
+        plt.plot(path_coords[:, 0], path_coords[:, 1], '-o', color='tab:blue', linewidth=2.5, markersize=8, zorder=5)
         # highlight start and end
-        plt.scatter([path_coords[0, 0]], [path_coords[0, 1]], c='green', s=80, label='start')
-        plt.scatter([path_coords[-1, 0]], [path_coords[-1, 1]], c='red', s=80, label='end')
-        plt.legend()
-
-    # if obstacles were provided via global variable, attempt to render them (optional)
-    try:
-        # look for a module-level variable `current_obstacles` that main may set
-        from __main__ import current_obstacles
-        if current_obstacles:
-            obs_coords = coords[list(current_obstacles)]
-            plt.scatter(obs_coords[:, 0], obs_coords[:, 1], c='0.2', marker='s', s=120, label='obstacle')
-    except Exception:
-        pass
+        plt.scatter([path_coords[0, 0]], [path_coords[0, 1]], c='green', s=150, marker='*', label='start', zorder=6)
+        plt.scatter([path_coords[-1, 0]], [path_coords[-1, 1]], c='red', s=150, marker='*', label='end', zorder=6)
+        plt.legend(loc='upper right')
 
     plt.gca().set_aspect('equal')
-    plt.title('Shortest path found by ACO')
+    plt.title(title)
     plt.axis('off')
     plt.tight_layout()
     plt.savefig(filename, dpi=150)
     plt.close()
+
+
+def create_maze_obstacles(m):
+    """Create a maze-like pattern of obstacles."""
+    obstacles = []
+    # Vertical walls
+    for r in range(1, m-1):
+        if r % 2 == 0:
+            for c in range(1, m-1, 2):
+                obstacles.append((r, c))
+    # Horizontal walls
+    for c in range(1, m-1):
+        if c % 2 == 1:
+            for r in range(2, m-1, 2):
+                obstacles.append((r, c))
+    return obstacles
+
+
+def create_corridor_obstacles(m):
+    """Create a narrow corridor forcing a specific path."""
+    obstacles = []
+    mid = m // 2
+    # Block most of the middle section, leaving only a narrow path
+    for r in range(1, m-1):
+        for c in range(mid-1, mid+2):
+            if c == mid and r != m // 2:  # Leave one opening in the middle
+                obstacles.append((r, c))
+    return obstacles
+
+
+def create_dense_obstacles(m, density=0.3):
+    """Create randomly distributed dense obstacles."""
+    np.random.seed(123)
+    obstacles = []
+    n = m * m
+    for r in range(m):
+        for c in range(m):
+            if np.random.random() < density:
+                idx = r * m + c
+                if idx != 0 and idx != n - 1:  # Don't block start/end
+                    obstacles.append((r, c))
+    return obstacles
+
 
 """
     Benchmark a specific ACO configuration over multiple runs.
@@ -184,7 +223,7 @@ def print_benchmark_results(results):
     print(f"  Mean:  {results['mean_cost']:.4f} +/- {results['std_cost']:.4f}")
     print(f"  Range: [{results['min_cost']:.4f}, {results['max_cost']:.4f}]")
     if results['best_path'] is not None:
-        print(f"  Best Path: {results['best_path']}")
+        print(f"  Path Length: {len(results['best_path'])} nodes")
     print(f"{'='*80}")
 
 
@@ -210,37 +249,22 @@ def compare_results(all_results):
     if valid_results:
         fastest = min(valid_results, key=lambda x: x['mean_time'])
         best_quality = min(valid_results, key=lambda x: x['min_cost'])
+        most_consistent = min(valid_results, key=lambda x: x['std_cost'])
         
         print(f"\n    Fastest: {fastest['config_name']} ({fastest['mean_time']:.6f}s)")
         print(f"    Best Quality: {best_quality['config_name']} (cost: {best_quality['min_cost']:.4f})")
+        print(f"    Most Consistent: {most_consistent['config_name']} (std: {most_consistent['std_cost']:.4f})")
 
 
-def main():
-    m = 5  # grid size m x m (increased for better benchmarking)
-    # example obstacles: list of (row, col) or node indices
-    obstacles = [(1, 1), (2, 1), (2, 2), (3, 2)]
+def run_scenario(scenario_name, m, obstacles, start, end, n_runs=10):
+    """Run benchmarks for a specific scenario."""
+    print(f"\n{'#'*100}")
+    print(f"# SCENARIO: {scenario_name}")
+    print(f"{'#'*100}")
+    
     G = grid_graph(m, obstacles=obstacles)
-    start = 0
-    end = m * m - 1
-
-    # set a module-level variable so the plot function can optionally render obstacles
-    try:
-        global current_obstacles
-        # convert obstacles to node indices set for plotting
-        obs_set = set()
-        for o in obstacles:
-            if isinstance(o, tuple) or isinstance(o, list):
-                obs_set.add(o[0] * m + o[1])
-            else:
-                obs_set.add(int(o))
-        # ensure start/end are not obstacles
-        obs_set.discard(start)
-        obs_set.discard(end)
-        current_obstacles = obs_set
-    except Exception:
-        current_obstacles = set()
-
-    # quick connectivity check: if obstacles disconnect start->end, fall back to no obstacles
+    
+    # Connectivity check
     from collections import deque
     def connected(adj, s, t):
         n = adj.shape[0]
@@ -258,41 +282,46 @@ def main():
         return False
 
     if not connected(G, start, end):
-        print('Obstacles disconnect start and end; ignoring obstacles for this run.')
-        obstacles = None
-        current_obstacles = set()
-        G = grid_graph(m)
+        print('   Obstacles disconnect start and end; skipping this scenario.')
+        return None
+
+    # Convert obstacles to node indices set for plotting
+    obs_set = set()
+    for o in obstacles:
+        if isinstance(o, tuple) or isinstance(o, list):
+            obs_set.add(o[0] * m + o[1])
+        else:
+            obs_set.add(int(o))
+    obs_set.discard(start)
+    obs_set.discard(end)
 
     print(f'Grid size: {m}x{m} = {m*m} nodes')
     print(f'Start: {start}, End: {end}')
-    print(f'Obstacles: {obstacles}')
+    print(f'Obstacles: {len(obs_set)} nodes blocked')
     
     # Common parameters
     common_params = {
-        'n_ants': 10,
-        'n_iterations': 100,
+        'n_ants': 15,
+        'n_iterations': 150,
         'decay': 0.3,
         'alpha': 1.0,
         'beta': 2.0
     }
     
-    # Number of benchmark runs
-    n_runs = 10
-    
     print(f'\nRunning benchmarks with {n_runs} runs per configuration...')
     
     # Configuration 1: No boosting
-    print('\n[1/3] Benchmarking: No Boosting...')
+    print('\n[1/4] Benchmarking: No Boosting...')
     results_no_boost = benchmark_aco(
         G, start, end,
-        config_name="No Boosting (Baseline)",
+        config_name="No Boosting",
         n_runs=n_runs,
         **common_params
     )
     print_benchmark_results(results_no_boost)
     
     # Configuration 2: Target boost only
-    print('\n[2/3] Benchmarking: Target Boost Only...')
+    print('\n[2/4] Benchmarking: Target Boost Only...')
     results_target_only = benchmark_aco(
         G, start, end,
         config_name="Target Boost Only",
@@ -305,10 +334,10 @@ def main():
     print_benchmark_results(results_target_only)
     
     # Configuration 3: Target + neighbor boost (default factor)
-    print('\n[3/3] Benchmarking: Target + Neighbor Boost (default)...')
+    print('\n[3/4] Benchmarking: Target + Neighbor Boost (5.0)...')
     results_neighbor_default = benchmark_aco(
         G, start, end,
-        config_name="Target + Neighbor Boost (5.0)",
+        config_name="Target + Neighbor (5.0)",
         n_runs=n_runs,
         target_boost=end,
         boost_factor=10.0,
@@ -318,10 +347,10 @@ def main():
     print_benchmark_results(results_neighbor_default)
     
     # Configuration 4: Target + neighbor boost (custom factor)
-    print('\n[4/4] Benchmarking: Target + Neighbor Boost (custom 3.0)...')
+    print('\n[4/4] Benchmarking: Target + Neighbor Boost (3.0)...')
     results_neighbor_custom = benchmark_aco(
         G, start, end,
-        config_name="Target + Neighbor Boost (3.0)",
+        config_name="Target + Neighbor (3.0)",
         n_runs=n_runs,
         target_boost=end,
         boost_factor=10.0,
@@ -340,15 +369,110 @@ def main():
     ]
     compare_results(all_results)
     
-    # Save visualization of best path from best configuration
-    best_config = min(all_results, key=lambda x: x['min_cost'])
-    if best_config['best_path'] is not None:
-        try:
-            plot_grid_path(m, best_config['best_path'], filename='best_path.png')
-            print(f"\n   Saved visualization of best path to 'best_path.png'")
-            print(f"   Configuration: {best_config['config_name']}")
-        except Exception as e:
-            print(f'Failed to save visualization: {e}')
+    # Save visualizations for each configuration
+    for i, result in enumerate(all_results):
+        if result['best_path'] is not None:
+            try:
+                filename = f"{scenario_name.lower().replace(' ', '_')}_config_{i+1}.png"
+                title = f"{scenario_name}\n{result['config_name']} - Cost: {result['min_cost']:.2f}"
+                plot_grid_path(m, result['best_path'], obstacles=obs_set, filename=filename, title=title)
+            except Exception as e:
+                print(f'Failed to save visualization for {result["config_name"]}: {e}')
+    
+    print(f"\n   Completed scenario: {scenario_name}")
+    return all_results
+
+
+def main():
+    """Run multiple complex scenarios to observe ACO performance."""
+    
+    print("="*100)
+    print("ACO SHORTEST PATH - COMPREHENSIVE BENCHMARK SUITE")
+    print("="*100)
+    
+    n_runs = 15  # Number of runs per configuration
+    
+    # Scenario 1: Large open grid with sparse obstacles
+    scenario1_results = run_scenario(
+        scenario_name="Large Open Grid (10x10, Sparse Obstacles)",
+        m=10,
+        obstacles=[(2, 3), (3, 3), (4, 3), (5, 5), (6, 5), (7, 5), (3, 7), (4, 7)],
+        start=0,
+        end=99,
+        n_runs=n_runs
+    )
+    
+    # Scenario 2: Medium grid with maze-like obstacles
+    scenario2_results = run_scenario(
+        scenario_name="Maze Pattern (12x12)",
+        m=12,
+        obstacles=create_maze_obstacles(12),
+        start=0,
+        end=143,
+        n_runs=n_runs
+    )
+    
+    # Scenario 3: Corridor scenario - forces long detour
+    scenario3_results = run_scenario(
+        scenario_name="Narrow Corridor (10x10)",
+        m=10,
+        obstacles=create_corridor_obstacles(10),
+        start=0,
+        end=99,
+        n_runs=n_runs
+    )
+    
+    # Scenario 4: Dense obstacles - challenging pathfinding
+    scenario4_results = run_scenario(
+        scenario_name="Dense Obstacles (15x15, 25% blocked)",
+        m=15,
+        obstacles=create_dense_obstacles(15, density=0.25),
+        start=0,
+        end=224,
+        n_runs=n_runs
+    )
+    
+    # Scenario 5: Very large sparse grid - tests scalability
+    scenario5_results = run_scenario(
+        scenario_name="Large Sparse Grid (20x20)",
+        m=20,
+        obstacles=[(i, 10) for i in range(5, 15) if i != 10],
+        start=0,
+        end=399,
+        n_runs=n_runs
+    )
+    
+    # Overall summary across all scenarios
+    print(f"\n\n{'='*100}")
+    print(f"{'OVERALL SUMMARY ACROSS ALL SCENARIOS':^100}")
+    print(f"{'='*100}")
+    
+    all_scenarios = [
+        ("Large Open Grid", scenario1_results),
+        ("Maze Pattern", scenario2_results),
+        ("Narrow Corridor", scenario3_results),
+        ("Dense Obstacles", scenario4_results),
+        ("Large Sparse Grid", scenario5_results)
+    ]
+    
+    for scenario_name, results in all_scenarios:
+        if results is None:
+            print(f"\n {scenario_name}: SKIPPED (disconnected graph)")
+            continue
+            
+        print(f"\n {scenario_name}:")
+        valid_results = [r for r in results if r['success_rate'] > 0]
+        if valid_results:
+            best = min(valid_results, key=lambda x: x['min_cost'])
+            fastest = min(valid_results, key=lambda x: x['mean_time'])
+            print(f"   Best Solution: {best['config_name']} (cost: {best['min_cost']:.4f})")
+            print(f"   Fastest: {fastest['config_name']} (time: {fastest['mean_time']:.6f}s)")
+        else:
+            print(f"    No successful paths found")
+    
+    print(f"\n{'='*100}")
+    print("   Benchmark suite completed! Check generated PNG files for visualizations.")
+    print(f"{'='*100}")
 
 
 if __name__ == '__main__':
