@@ -12,7 +12,7 @@ class AntColonyShortestPath:
     Pheromone is stored per-edge and updated by ants that reach the target.
     """
 
-    def __init__(self, graph, n_ants=20, n_iterations=200, decay=0.5, alpha=1.0, beta=2.0, seed=None):
+    def __init__(self, graph, n_ants=20, n_iterations=200, decay=0.5, alpha=1.0, beta=2.0, seed=None, target_boost=None, boost_factor=10.0):
         self.graph = np.array(graph, dtype=float)
         if self.graph.ndim != 2 or self.graph.shape[0] != self.graph.shape[1]:
             raise ValueError("graph must be a square adjacency matrix")
@@ -25,6 +25,12 @@ class AntColonyShortestPath:
         # pheromone init (small positive), but zero where no edge
         self.pheromone = np.ones_like(self.graph) * 1e-6
         self.pheromone[~self.allowed] = 0.0
+        
+        # boost pheromone on edges leading to target node (optional)
+        if target_boost is not None:
+            for i in range(self.n_nodes):
+                if self.allowed[i, target_boost]:
+                    self.pheromone[i, target_boost] *= boost_factor
 
         # heuristic: inverse distance (avoid division by zero)
         eps = np.finfo(float).eps
