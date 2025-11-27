@@ -12,7 +12,8 @@ class AntColonyShortestPath:
     Pheromone is stored per-edge and updated by ants that reach the target.
     """
 
-    def __init__(self, graph, n_ants=20, n_iterations=200, decay=0.5, alpha=1.0, beta=2.0, seed=None, target_boost=None, boost_factor=10.0):
+    def __init__(self, graph, n_ants=20, n_iterations=200, decay=0.5, alpha=1.0, beta=2.0, seed=None, 
+                 target_boost=None, boost_factor=10.0, boost_neighbors=False, neighbor_boost_factor=None):
         self.graph = np.array(graph, dtype=float)
         if self.graph.ndim != 2 or self.graph.shape[0] != self.graph.shape[1]:
             raise ValueError("graph must be a square adjacency matrix")
@@ -28,9 +29,26 @@ class AntColonyShortestPath:
         
         # boost pheromone on edges leading to target node (optional)
         if target_boost is not None:
+            # Boost edges leading directly to the target
             for i in range(self.n_nodes):
                 if self.allowed[i, target_boost]:
                     self.pheromone[i, target_boost] *= boost_factor
+            
+            # Optionally boost edges leading to neighbors of the target
+            if boost_neighbors:
+                # Set neighbor boost factor (default to half of target boost)
+                if neighbor_boost_factor is None:
+                    neighbor_boost_factor = boost_factor * 0.5
+                
+                # Find incoming neighbors of the target (nodes that can reach target)
+                target_neighbors = [j for j in range(self.n_nodes) 
+                                  if self.allowed[j, target_boost] and j != target_boost]
+                
+                # Boost edges leading to neighbors of the target
+                for neighbor in target_neighbors:
+                    for i in range(self.n_nodes):
+                        if self.allowed[i, neighbor] and i != target_boost:
+                            self.pheromone[i, neighbor] *= neighbor_boost_factor
 
         # heuristic: inverse distance (avoid division by zero)
         eps = np.finfo(float).eps
