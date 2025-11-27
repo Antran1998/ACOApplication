@@ -178,10 +178,10 @@ def print_benchmark_results(results):
     print(f"Runs: {results['n_runs']}")
     print(f"Success Rate: {results['success_rate']:.1f}%")
     print(f"\nExecution Time (seconds):")
-    print(f"  Mean:  {results['mean_time']:.6f} ± {results['std_time']:.6f}")
+    print(f"  Mean:  {results['mean_time']:.6f} +/- {results['std_time']:.6f}")
     print(f"  Range: [{results['min_time']:.6f}, {results['max_time']:.6f}]")
     print(f"\nPath Cost:")
-    print(f"  Mean:  {results['mean_cost']:.4f} ± {results['std_cost']:.4f}")
+    print(f"  Mean:  {results['mean_cost']:.4f} +/- {results['std_cost']:.4f}")
     print(f"  Range: [{results['min_cost']:.4f}, {results['max_cost']:.4f}]")
     if results['best_path'] is not None:
         print(f"  Best Path: {results['best_path']}")
@@ -211,8 +211,8 @@ def compare_results(all_results):
         fastest = min(valid_results, key=lambda x: x['mean_time'])
         best_quality = min(valid_results, key=lambda x: x['min_cost'])
         
-        print(f"\n?? Fastest: {fastest['config_name']} ({fastest['mean_time']:.6f}s)")
-        print(f"?? Best Quality: {best_quality['config_name']} (cost: {best_quality['min_cost']:.4f})")
+        print(f"\n    Fastest: {fastest['config_name']} ({fastest['mean_time']:.6f}s)")
+        print(f"    Best Quality: {best_quality['config_name']} (cost: {best_quality['min_cost']:.4f})")
 
 
 def main():
@@ -345,7 +345,7 @@ def main():
     if best_config['best_path'] is not None:
         try:
             plot_grid_path(m, best_config['best_path'], filename='best_path.png')
-            print(f"\n?? Saved visualization of best path to 'best_path.png'")
+            print(f"\n   Saved visualization of best path to 'best_path.png'")
             print(f"   Configuration: {best_config['config_name']}")
         except Exception as e:
             print(f'Failed to save visualization: {e}')
